@@ -111,17 +111,9 @@ enum FlowType : byte
 	High,
 	VeryHigh
 };
-//FlowType whichFlow = Off;
 FlowType lastFlow = Off;
 FlowType flowNow = Off;
 FlowType flow = Off;
-
-/*
-int whichFlow = 0;
-String lastFlow = "Off";
-String flowNow = "Off";
-String flow = "Off";
-*/
 
 enum ActionType : byte
 {
@@ -180,6 +172,7 @@ long checkTime = 0; //just for knwoing when 3 minutes has passed for the program
 unsigned long HourCheck = 0; //for timing in the whatHour() and whatDay() functions
 unsigned long DayCheck = 0;
 
+//used to print the data on the SD card in a machine readable format
 union ToByte {
 	unsigned long l;
 	int i;
@@ -188,21 +181,12 @@ union ToByte {
 };
 
 // All the below variables are used to determine the daily statistics
-// each entry in each array represents data of a single day
-unsigned long todayOnTime;
-unsigned long todayTimeEWMA;
-unsigned long todayStdDevTime;
-double todayWater;
-int todayUses;
-//unsigned long todayAvgEWMA = 0;
-
+unsigned long todayOnTime; //total time a sink is on in a given day
+unsigned long todayTimeEWMA; //EWMA * total time, so one can determine the average EWMA from a day
+unsigned long todayStdDevTime; //stdD * total time, so one can determine the average stdD from a day
+double todayWater; //daily estimated water by the polynomial
+int todayUses; //total number of off-on-off instances in a given day
 const byte nDays = 80;
-/*unsigned long DailyOnTime[nDays]; //total time a sink is on in a given day
-unsigned long DailyTimeEWMA[nDays]; //EWMA * total time, so one can determine the average EWMA from a day
-unsigned long DailyStdDevTime[nDays]; //stdD * total time, so one can determine the average stdD from a day
-double DailyWater[nDays]; //daily estimated water by the polynomial
-int DailyUses[nDays]; //total number of off-on-off instances in a given day
-*/
 
 void setup() {
   daysFile = F("Days.txt");
@@ -216,16 +200,7 @@ void setup() {
     Serial.begin(9600);
     while (!Serial) { ;}
   }
-  /*
-  // initialize all the readings to 0:
-  for (int thisReading = 0; thisReading < numReadings; thisReading++) {
-    readings[thisReading] = 0;
-  }
-
-  for (int thisReading = 0; thisReading < stdDevReads; thisReading++) {
-    dev[thisReading] = 0;
-  }
-  */
+  
   // set up the LCD's number of columns and rows:
   lcd.begin(20, 4);
 
@@ -359,8 +334,6 @@ void setup() {
 	Today = whatDay();
   thisHour = whatHour();
   lcd.clear();
-// Fills in values of empty arrays to the array values stored on the sd cards
-//  if (CheckArrays()) {
 //Fills in values of variables based on arrays on sd card
   if (ReadFromArrays()) {
     lcd.clear();
@@ -389,7 +362,7 @@ void loop() {
   readIndex = (readIndex + 1) % numReadings;
   stdIndex = (stdIndex + 1) % stdDevReads;
 
-  if (millis() - checkTime > 180000) { //jus to make sure the day and hour are checked every 3 mins
+  if (millis() - checkTime > 180000) { //just to make sure the day and hour are checked every 3 mins
     checkTime = millis();
     thisHour = whatHour();
     byte curDay = whatDay();
@@ -415,16 +388,6 @@ void loop() {
     count++; //add to count for PTP window
     return;
   }
-  
-  
-  //Demarcate buffer data, for DAQ DELETE FOR REAL one
-  /*if (ok) {
-    lcd.clear();
-    lcd.write(F("OK"));
-    if (useSerial) Serial.println("Start Here:");
-    ok = false;
-    lcd.clear();
-  }*/
   
   // EWMA CALCULATED ------------------------------------------------------- EWMA CALCULATED -------------------------------------------------------
   //if (count > ptpTime) {
@@ -551,13 +514,6 @@ void loop() {
   }
   // classify flow into 6 categories
   flow = classifyFlow(useEWMA ? EWMA : stdDEWMA);
-  /*
-  if (useEWMA) {
-    flow = classifyFlow(EWMA);
-  } else {
-    flow = classifyFlow(stdDEWMA);
-  }*/
-
   //the flow has changed to a new kind, and the time spent at
   if (flow != flowNow) {
     flowCount ++;
@@ -581,20 +537,7 @@ void saveUsageSummary() {
 	if (UseSum) {
 		thisEWMAAvg = thisEWMA / thisCounter;
 		thisStdAvg = thisStd / thisCounter;
-		//estimate water as a second order polynomial
    thisAvgFlow= calculateCurrentFlow(useEWMA ? thisEWMAAvg : thisStdAvg);
-/*		if (useEWMA) { //EWMA Used for flow calc
-			thisAvgFlow = calculateCurrentFlow(thisEWMAAvg);
-		}
-		else { //stdD Used
-			thisAvgFlow = calculateCurrentFlow(thisStdAvg);
-		}
-		if (thisAvgFlow > MaxFlow) { //can never go mroe than emasured max flow
-			thisAvgFlow = MaxFlow;
-		}
-		if (thisAvgFlow < 0) { //or below 0 flow...
-			thisAvgFlow = 0;
-		}*/
    thisAvgFlow = min(thisAvgFlow, MaxFlow);
    thisAvgFlow = max(thisAvgFlow, 0);
 
@@ -613,18 +556,12 @@ void saveUsageSummary() {
 		UseSum.println(thisWater);
 		UseSum.close();
 		//Add values to the daily totals
-		/*DailyOnTime[Today] += thisElapsed;
-		DailyTimeEWMA[Today] += thisEWMAAvg * thisElapsed;
-		DailyStdDevTime[Today] += thisStdAvg * thisElapsed;
-		DailyWater[Today] += thisWater; //OR this Water, or some combo!!! <------------- DAILY H2O calc.
-		DailyUses[Today]++;*/
 		todayOnTime += thisElapsed;
 		todayTimeEWMA += thisEWMAAvg * thisElapsed;
 		todayStdDevTime += thisStdAvg * thisElapsed;
 		todayWater += thisWater; //OR this Water, or some combo!!! <------------- DAILY H2O calc.
 		todayUses++;
-		//if (!SaveArrays()) { //Save arrays or show error
-		if (!SaveToArrays()) {
+		if (!SaveToArrays()) { //save to arrays or show error
 			lcd.clear();
 			lcd.write(F("Arrays not saved,"));
 			lcd.setCursor(0, 1);
@@ -1004,69 +941,6 @@ bool SaveToArrays() {
 	return true;
 }
 
-//bool SaveArrays() { //seems to work at 12PM 9-21, except saves it three times...
-  /*need to save each of the six arrays, in this order, to the sd file Array.txt
-    unsigned long DailyOnTime[70] = {0};
-    unsigned long DailyTimeEWMA[70] = {0};
-    unsigned long DailyStdDevTime[70] = {0};
-    double DailyWater[70] = {0};
-    int DailyUses[70] = {0};
-  */
-	/*
-  if (!SD.remove(arraysFile)) {
-    lcd.clear();
-    lcd.print(F("ERROR Remove array")); //remove old one to make new one
-    delay(5000);
-  }
-  File Array = SD.open(arraysFile, FILE_WRITE);
-  if (Array) {
-    for (int i = 0; i < nDays; i++) { //DailyOnTime
-      Array.print(DailyOnTime[i]);
-      if (i < nDays - 1) { //dont print on last one
-        Array.print("\t");
-      } else {
-        Array.print("\n");
-      }
-    }
-    for (int i = 0; i < nDays; i++) { //DailyTimeEWMA
-      Array.print(DailyTimeEWMA[i]);
-      if (i < nDays - 1) { //dont print on last one
-        Array.print("\t");
-      } else {
-        Array.print("\n");
-      }
-    }
-    for (int i = 0; i < nDays; i++) { //DailyStdDevTime
-      Array.print(DailyStdDevTime[i]);
-      if (i < nDays - 1) { //dont print on last one
-        Array.print("\t");
-      } else {
-        Array.print("\n");
-      }
-    }
-    for (int i = 0; i < nDays; i++) { //DailyWater
-      Array.print(DailyWater[i]);
-      if (i < nDays - 1) { //dont print on last one
-        Array.print("\t");
-      } else {
-        Array.print("\n");
-      }
-    }
-    for (int i = 0; i < nDays; i++) { //DailyUses
-      Array.print(DailyUses[i]);
-      if (i < nDays - 1) { //dont print on last one
-        Array.print("\t");
-      } else {
-        Array.print("\n");
-      }
-    }
-    Array.close();
-    return true;
-  }
-  return false;
-}
-*/
-
 /*
 Reads the file in newarraysFile and saves the variables for the
 current day into:
@@ -1099,67 +973,6 @@ bool ReadFromArrays() {
 	todayUses = value.i;
 	return true;
 }
-
-//bool CheckArrays() {
-  /* Need to have a file that reads each array from the file, and fills it in (in case of unplug)
-      in this order, each entry is seperated by a \t and each array is seperated by a \n
-    unsigned long DailyOnTime[70] = {0}; ArrayNo = 0
-    unsigned long DailyTimeEWMA[70] = {0}; ArrayNo = 1
-    unsigned long DailyStdDevTime[70] = {0}; ArrayNo = 2
-    double DailyWater[70] = {0}; ArrayNo = 3
-    int DailyUses[70] = {0}; ArrayNo = 4
-  */
-	/*
-  File Array;
-  String inString = "";
-  int NewlineCounter = 0;
-  int TimesRan = 0;
-  int ArrayNo = 0;
-  long startTime = 0;
-  int i = 0;
-  Array = SD.open(arraysFile);
-  lcd.clear();
-  lcd.print(F("Checking arrays"));
-  lcd.setCursor(0, 1);
-  if (Array) {
-    while (Array.available()) {
-      lcd.setCursor(0, 1);
-      lcd.print(TimesRan++);
-      char inChar = Array.read();
-      if (inChar == '\n') { //see if the array is over (demarcated by \n)
-        ArrayNo++;
-        i = 0;
-        continue; //dont write this char to anything
-      }
-      if (inChar != '\t') {
-        inString += (char)inChar;
-      } else {
-        switch (ArrayNo) {
-          case 0:
-            DailyOnTime[i] = (unsigned long)inString.toFloat();
-            break;
-          case 1:
-            DailyTimeEWMA[i] = (unsigned long)inString.toFloat();
-            break;
-          case 2:
-            DailyStdDevTime[i] = (unsigned long)inString.toFloat();
-            break;
-          case 3:
-            DailyWater[i] = inString.toFloat();
-            break;
-          case 4:
-            DailyUses[i] = (int)inString.toFloat();
-            break;
-        }
-        inString = "";
-        i++;
-      }
-    }
-    return true;
-  }
-  return false;
-}
-*/
 
 void printOff() {
   //write O
