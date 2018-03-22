@@ -114,7 +114,7 @@ EPD_Class EPD(EPD_2_7, Pin_PANEL_ON, Pin_BORDER, Pin_DISCHARGE, Pin_RESET, Pin_B
  */
 
 // initialize the library with the numbers of the interface pins
-//LiquidCrystal lcd(7, 8, 9, 10, 11, 12);
+LiquidCrystal lcd(7, 8, 9, 10, 11, 12);
 
 const int inputPin = A0;              // pin on board that the amplification circuit is hooked up to
 
@@ -259,12 +259,22 @@ union ToByte {
   char c[4];
 };
 
+//enum for each of the below variables used for daily statistics
+enum MetricType : byte {
+  OnTime, // = 0
+  EWMATime, // = 1
+  StdDevTime, // = 2
+  TotalWater, // = 3
+  Uses // = 4
+};
+
 // All the below variables are used to determine the daily statistics
 unsigned long todayOnTime; //total time a sink is on in a given day
 unsigned long todayTimeEWMA; //EWMA * total time, so one can determine the average EWMA from a day
 unsigned long todayStdDevTime; //stdD * total time, so one can determine the average stdD from a day
 double todayWater; //daily estimated water by the polynomial
 int todayUses; //total number of off-on-off instances in a given day
+
 const byte nDays = 80;
 
 void setup() {
@@ -1118,6 +1128,7 @@ bool SaveToArrays() {
 	value.i = todayUses;
 	Array.seek(4 * (nDays * 4 + Today - 1));
 	Array.write(value.c, 4);
+  Array.close();
 	return true;
 }
 
@@ -1151,8 +1162,50 @@ bool ReadFromArrays() {
 	Array.seek(4 * (nDays * 4 + Today - 1));
 	Array.read(value.c, 4);
 	todayUses = value.i;
+  Array.close();
 	return true;
 }
+
+/*enum MetricType : byte {
+  OnTime, // = 0
+  EWMATime, // = 1
+  StdDevTime, // = 2
+  TotalWater, // = 3
+  Uses // = 4
+};*/
+
+long GetPastOnTime(byte day) {
+  return ReadValueFromArray(day, OnTime).l;
+}
+
+long GetPastEWMATime(byte day) {
+  return ReadValueFromArray(day, EWMATime).l;
+}
+
+long GetPastStdDevTime(byte day) {
+  return ReadValueFromArray(day, StdDevTime).l;
+}
+
+double GetPastTotalWater(byte day) {
+  return ReadValueFromArray(day, TotalWater).d;
+}
+
+int GetPastUses(byte day) {
+  return ReadValueFromArray(day, Uses).i;
+}
+
+ToByte ReadValueFromArray(byte day, MetricType metric) {
+  ToByte value;
+  File Array = SD.open(newArraysFile, FILE_WRITE);
+  if (!Array) {
+    return value;
+  }
+  Array.seek(4 * (nDays * (byte)metric + Today - 1));
+  Array.read(value.c, 4);
+  Array.close();
+  return value;
+}
+
 
 void printOff() {
   //write O
