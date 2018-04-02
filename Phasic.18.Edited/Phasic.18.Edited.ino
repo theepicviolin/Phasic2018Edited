@@ -29,6 +29,9 @@ The PCB file for the shield should be in some provided documentation, or Mr. Ahn
 There should also be included the lasercut schematic for the packaging, which is to be done on a 1/8" 12"x24" piece of acrylic and makes 2.5 housings.
 */
 
+#define MIN_VALUE 0xFFFF
+#define MAX_VALUE 0x7FFF
+
 // include the library code:
 #include <LiquidCrystal.h>
 #include <SD.h>
@@ -37,7 +40,15 @@ There should also be included the lasercut schematic for the packaging, which is
 /********
  *  LED SETUP
  */
-const int ledPin = 11;
+ #include <Adafruit_NeoPixel.h>
+#ifdef __AVR__
+  #include <avr/power.h>
+#endif
+const int nPixels = 144; // Number of LEDs in strip
+const int ledPin = 3;
+Adafruit_NeoPixel pixels = Adafruit_NeoPixel(nPixels, ledPin, NEO_GRB + NEO_KHZ800);
+
+
 int howbright = 0; //determines the brightness of the LED set from 0 to 255
 const int fadeFactor = 51; //constant to multiply number associated with flow type by. 
 int endbright = 0; //The end level of brightness its transitioning too when going to a new state, eventually howbright is set equal to this
@@ -55,70 +66,17 @@ boolean pirLockLow = true;
 boolean pirTakeLowTime;
 int pirPin = 31; //the digital pin connected to the PIR sensor's output
 
-/**********************
- * EINK SETUP
- */
-#include <inttypes.h>
-#include <ctype.h>
-// required libraries
-#include <SPI.h>
-#include <FLASH.h>
-#include <EPD2.h>
-#include <Wire.h>
-#include <LM75.h>
-
-#define IMAGE_1_FILE "hurt_me_in_this_way.xbm"
-#define IMAGE_1_BITS hurt_me_in_this_way_bits
-#define IMAGE_2_FILE "cat_2_7.xbm"
-#define IMAGE_2_BITS cat_2_7_bits
-// Add Images library to compiler path
-#include <Images.h>  // this is just an empty file
-// images
-PROGMEM const
-#define unsigned
-#define char uint8_t
-#include IMAGE_1_FILE
-#undef char
-#undef unsigned
-PROGMEM const
-#define unsigned
-#define char uint8_t
-#include IMAGE_2_FILE
-#undef char
-#undef unsigned
-
-// Arduino IO layout
-//const int Pin_TEMPERATURE = A0; // Temperature is handled by LM75 over I2C and not an analog pin
-const int Pin_PANEL_ON = 5;
-const int Pin_BORDER = 10;
-const int Pin_DISCHARGE = 4;
-const int Pin_PWM = 5;    // Not used by COG v2
-const int Pin_RESET = 6;
-const int Pin_BUSY = 7;
-const int Pin_EPD_CS = 8;
-const int Pin_FLASH_CS = 9;
-const int Pin_SW2 = 50;
-const int Pin_RED_LED = 52;
-
-// LED anode through resistor to I/O pin
-// LED cathode to Ground
-#define LED_ON  HIGH
-#define LED_OFF LOW
-
-// define the E-Ink display
-EPD_Class EPD(EPD_2_7, Pin_PANEL_ON, Pin_BORDER, Pin_DISCHARGE, Pin_RESET, Pin_BUSY, Pin_EPD_CS);
-
-
 /************
  * EVERYTHING ELSE SETUP
  */
 
 // initialize the library with the numbers of the interface pins
 LiquidCrystal lcd(7, 8, 9, 10, 11, 12);
+const int lcdPin = 6;
 
 const int inputPin = A0;              // pin on board that the amplification circuit is hooked up to
 
-const bool useSerial = false;
+const bool useSerial = true;
 
 const byte ptpTime = 150;        //how many times the loop should run before actually outputting or changing anything, approximately proportionate to 1.6ms each
 byte count = 0;                  // timer for output for the ptp output above
@@ -129,7 +87,7 @@ const double lam = 0.5;               //Lambda of EWMA calculations, larger = fa
 //All below values need to be set with EACH calibration
 
 const double FlowEWMA[5] = {410, 420, 500, 550, 600}; // thresholds (EWMA or stdDEWMA) for {vlow, low, med, high, vhigh}                                 CALIBRATE[ ]
-double EWMA = 389; //initialize to 'off' value                                                                                                             CAILBRATE[ ]
+double EWMA = 0; //initialize to 'off' value                                                                                                             CAILBRATE[ ]
 const double MaxFlow = 0.15; //should be in L/ms, set to MAX FLOW from sink                                                                                      CAILBRATE[ ]
 double stdDEWMA = 11; //off value                                                                                                                          CAILBRATE[ ]
 const bool useEWMA = false; //true for ptpEWMA , false if standard deviation (usually use standard deviation)                                                     CAILBRATE[ ]
@@ -164,20 +122,20 @@ const String hourFile;
 const String arraysFile;
 const String newArraysFile;
 
-const byte numReadings = 20;     //number of readings for the running average used in ptp calculations
+const byte numReadings = 20;     //number of readings for the running  used in ptp calculations
 bool ok = true;                     // just for trimming of beignning data during calibration, as the serial buffer will have data in it to be ignored
 int readings[numReadings];      // the readings from the analog input
 byte readIndex = 0;              // the index of the current reading
 int total = 0;                  // the running total
-int average = 200;              // the average
+int average = 0;              // the average
 byte activeCounter = 0;          //timer for active screen
 byte idleCounter = 0;            //timer for idle screen
 
 //these valeus are used to generate a peak to peak signal of the raw sensor reading
 //mxm = maximum, mnm = minimum, ptp = peak to peak of a given number of averages of readings
 //this whole system could probably be improved
-double mxm = 0;
-double mnm = 0;
+int mxm = MIN_VALUE;
+int mnm = MAX_VALUE;
 double ptp = 0;
 
 //variables used to determine the type of flow, from Off, Very Low, Low, Med, High, Very High
@@ -217,6 +175,8 @@ enum PhaseType : byte
   Action,
   Maintenance
 };
+PhaseType PhaseNow = BaselinePhase;
+
 
 const byte PhaseDay[5] = {14, 21, 28, 35, 49}; //BL, PC, C, PR, A, M 50 days total
 ActionType whichAction = BaselineAction; //0: Big text 1: Waste not want not 2: Raining
@@ -280,7 +240,8 @@ const byte nDays = 80;
 void setup() {
   // initialize serial communication with computer:
   if (useSerial) Serial.begin(9600);
-  
+  pinMode(lcdPin, OUTPUT);
+  digitalWrite(lcdPin, HIGH);
   pinMode(ledPin, OUTPUT); // set as an output
   
   pinMode(pirPin, INPUT);
@@ -294,58 +255,25 @@ void setup() {
   if (useSerial) Serial.println("SENSOR ACTIVE");
   delay(50);
 
-  
+
+  /*
+   * NEOPIXEL SETUP
+   */
+#if defined (__AVR_ATtiny85__)
+  if (F_CPU == 16000000) clock_prescale_set(clock_div_1);
+#endif
+
+  pixels.begin(); // This initializes the NeoPixel library.
+
+  /*
+   * END NEOPIXEL SETUP
+   */
   
   // set up the LCD's number of columns and rows:
-  //lcd.begin(20, 4);
+  lcd.begin(20, 4);
 
   //first display which program is being used
-  //lcd.print(F("Phasic 17 Cleaned Up"));
-  
-  pinMode(Pin_RED_LED, OUTPUT);
-  pinMode(Pin_SW2, INPUT);
-  pinMode(Pin_BUSY, INPUT);
-  pinMode(Pin_RESET, OUTPUT);
-  pinMode(Pin_PANEL_ON, OUTPUT);
-  pinMode(Pin_DISCHARGE, OUTPUT);
-  pinMode(Pin_BORDER, OUTPUT);
-  pinMode(Pin_EPD_CS, OUTPUT);
-  pinMode(Pin_FLASH_CS, OUTPUT);
-
-  digitalWrite(Pin_RED_LED, LOW);
-  digitalWrite(Pin_RESET, LOW);
-  digitalWrite(Pin_PANEL_ON, LOW);
-  digitalWrite(Pin_DISCHARGE, LOW);
-  digitalWrite(Pin_BORDER, LOW);
-  digitalWrite(Pin_EPD_CS, LOW);
-  digitalWrite(Pin_FLASH_CS, HIGH);
-
-  FLASH.begin(Pin_FLASH_CS);
-  if (FLASH.available()) {
-    if (useSerial) Serial.println("FLASH chip detected OK");
-  } else {
-    uint8_t maufacturer;
-    uint16_t device;
-    if (useSerial) {
-      FLASH.info(&maufacturer, &device);
-      Serial.print("unsupported FLASH chip: MFG: 0x");
-      Serial.print(maufacturer, HEX);
-      Serial.print("  device: 0x");
-      Serial.print(device, HEX);
-      Serial.println();
-    }
-  }
-  Wire.begin();
-  LM75.begin();
-  EPD.begin(); // power up the EPD panel
-  EPD.setFactor(LM75.read()); // adjust for current temperature
-  EPD.clear();
-  EPD.end();   // power down the EPD panel
-
-  /*********
-   * 
-   * EINK: DISPLAY WELCOME
-   */
+  lcd.print(F("Phasic 17 Cleaned Up"));
   
   daysFile = F("Days.txt");
   hourFile = F("HOUR.txt");
@@ -356,7 +284,7 @@ void setup() {
   // All byte functions delcared below are for the custom characters
   // for printing the big text in the active phase
   //create all custom characters for BIG TEXT
-  /*
+  
   byte drop[8] = {
     0b00000,
     0b00100,
@@ -447,14 +375,14 @@ void setup() {
   lcd.createChar(5, GRight);
   lcd.createChar(6, ECenter);
   lcd.createChar(7, drop);
-  */
+  
   //initialize SD
   // value of 53 is specific to ARDUINO MEGA, will be different for other Arduino boards
   //if (!SD.begin(53)) {
   if (!SD.begin()) { //no input results in default pin set based on the board selected in build options, MEGA -> 53
     if (useSerial) Serial.println(("SD Failed"));
-    //lcd.clear();
-    //lcd.print(F("SD Failed. Try again."));
+    lcd.clear();
+    lcd.print(F("SD Failed. Try again."));
     /**************
      * TODO: DISPLAY EINK SD FAILED MESSAGE
      */
@@ -462,11 +390,8 @@ void setup() {
     return;
   }
   
-  //lcd.clear();
-  //lcd.print(F("SD Initialized"));
-  /************************
-   * TODO: DISPLAY EINK SD INITIALIZED MESSAGE
-   */
+  lcd.clear();
+  lcd.print(F("SD Initialized"));
   
   
   delay(100);
@@ -474,21 +399,15 @@ void setup() {
   //Open file, make sure it worked
 	File myFile = SD.open(F("AllOn.txt"), FILE_WRITE);
   if (myFile) {
-    //lcd.clear();
-    //lcd.write(F("File opened"));
-    /************************
-     * TODO: DISPLAY EINK FILE OPENED MESSAGE
-     */
+    lcd.clear();
+    lcd.write(F("File opened"));
     myFile.println(F("File opened"));
     myFile.close();
     delay(100);
   }
   else {
-    //lcd.clear();
-    //lcd.write(F("File failed to open"));
-    /************************
-     * TODO: DISPLAY EINK FILE FAILED TO OPEN MESSAGE
-     */
+    lcd.clear();
+    lcd.write(F("File failed to open"));
     delay(30000);
   }
 
@@ -498,13 +417,13 @@ void setup() {
   lcd.clear();
 //Fills in values of variables based on arrays on sd card
   if (ReadFromArrays()) {
-    //lcd.write(F("Memory ready."));
+    lcd.write(F("Memory ready."));
     delay(100);
   } else {
-    //lcd.write(F("Arrays not intialized."));
+    lcd.write(F("Arrays not intialized."));
     delay(3000);
   }
-	//lcd.write(F("Ready!"));
+	lcd.write(F("Ready!"));
  
   /************************
   * TODO: DISPLAY EINK MESSAGES
@@ -513,37 +432,42 @@ void setup() {
   delay(500);
 }
 
-
+int pixelIdx = 0;
+long pixelTime = millis();
 void loop() {
-  if(digitalRead(pirPin) == HIGH){
-    if(pirLockLow){ 
-     //makes sure we wait for a transition to LOW before any further output is made:
-     pirLockLow = false;
-     //TODO: fade in LED
-     delay(5);
+  Serial.println(String(digitalRead(pirPin)) + ", " + String(EWMA));
+  if(digitalRead(pirPin) == HIGH && EWMA > 5) {
+    if (millis() - pixelTime > 50) {
+      digitalWrite(lcdPin, HIGH);
+      pixels.setPixelColor(pixelIdx, pixels.Color(0,100,0)); // Moderately bright green color.
+      pixels.show(); // This sends the updated pixel color to the hardware.
+      pixelIdx++;
+      pixelTime = millis();
+      if (pixelIdx >= nPixels) {
+        for (int i = 0; i <= pixelIdx; i++)
+        {
+          pixels.setPixelColor(i, pixels.Color(0,0,0));
+          pixels.show();
+        }
+        pixelIdx = 0;
+      }
     }
-    pirTakeLowTime = true;
   } else {
-    if(pirTakeLowTime){
-      pirLowIn = millis();          //save the time of the transition from high to LOW
-      pirTakeLowTime = false;       //make sure this is only done at the start of a LOW phase
+    for (int i = 0; i <= pixelIdx; i++)
+    {
+      pixels.setPixelColor(i, pixels.Color(0,0,0));
+      pixels.show();
     }
-    if(!pirLockLow && millis() - pirLowIn > pirPause){ 
-      //makes sure this block of code is only executed again after
-      //a new motion sequence has been detected
-      pirLockLow = true;
-      //TODO: fade out LED
-      delay(50);
-    }
-    return;
+    pixelIdx = 0;
+    //return;
   }
-  setBrightness();
+  //setBrightness();
 
   
   // TAKE READING AND CALCULATE STANDARD DEVIATION AND RUNNING AVERAGE
-  total = total - readings[readIndex]; // subtract the last reading:
+  total -= readings[readIndex]; // subtract the last reading:
   readings[readIndex] = analogRead(inputPin); // read from the sensor:
-  total = total + readings[readIndex]; // add the reading to the total:
+  total += readings[readIndex]; // add the reading to the total:
 
   average = total / numReadings; // calculate the average
 
@@ -552,6 +476,7 @@ void loop() {
   readIndex = (readIndex + 1) % numReadings;
   stdIndex = (stdIndex + 1) % stdDevReads;
 
+  
   if (millis() - checkTime > 180000) { //just to make sure the day and hour are checked every 3 mins
     checkTime = millis();
     thisHour = whatHour();
@@ -569,7 +494,7 @@ void loop() {
   //PTP Calculations gather max and min
   if (count <= ptpTime) {
     //check if average is max or min, cut super high
-    if (average >= mxm && average < 800) {
+    if (average >= mxm) {
       mxm = average; // high values for ptp
     }
     if (average <= mnm) { //low values for ptp
@@ -715,8 +640,8 @@ void loop() {
     }
   }
 
-  mxm = 0; //reset PTP
-  mnm = 0;
+  mxm = MIN_VALUE; //reset PTP
+  mnm = MAX_VALUE;
   count = 0; //reset count
 //} //end of the output step (count)
 } // ------------------------------------------------------------------------- END OF VOID LOOP -------------------------------------------------------------------
@@ -844,7 +769,7 @@ void setPhase() {
   // which action and post action screens to be used.
   byte q = Today >= PhaseDay[2]; //a bunch of weird but fast math that calculates the current phase
   q += Today >= PhaseDay[1 + 2*q];
-  PhaseType PhaseNow = (PhaseType)(2*q + (Today >= PhaseDay[2*q]));
+  //PhaseType PhaseNow = (PhaseType)(2*q + (Today >= PhaseDay[2*q]));
   switch (PhaseNow) {
     case BaselinePhase:
       whichTip = 0;
