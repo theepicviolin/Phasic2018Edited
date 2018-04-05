@@ -40,18 +40,20 @@ There should also be included the lasercut schematic for the packaging, which is
 /********
  *  LED SETUP
  */
- #include <Adafruit_NeoPixel.h>
-#ifdef __AVR__
-  #include <avr/power.h>
-#endif
+ #include <WS2812FX.h>
 const int nPixels = 144; // Number of LEDs in strip
 const int ledPin = 3;
-Adafruit_NeoPixel pixels = Adafruit_NeoPixel(nPixels, ledPin, NEO_GRB + NEO_KHZ800);
+WS2812FX pixels = WS2812FX(nPixels, ledPin, NEO_GRB + NEO_KHZ800);
+//Adafruit_NeoPixel pixels = Adafruit_NeoPixel(nPixels, ledPin, NEO_GRB + NEO_KHZ800);
+
+const int nSegs = 10;
+int segLengths[nSegs] = {7, 7, 7, 7, 8, 9, 9, 8, 9, 8};
 
 
 int howbright = 0; //determines the brightness of the LED set from 0 to 255
 const int fadeFactor = 51; //constant to multiply number associated with flow type by. 
 int endbright = 0; //The end level of brightness its transitioning too when going to a new state, eventually howbright is set equal to this
+
 
 /*************
  * PIR SETUP
@@ -86,13 +88,13 @@ const double lam = 0.5;               //Lambda of EWMA calculations, larger = fa
 
 //All below values need to be set with EACH calibration
 
-const double FlowEWMA[5] = {410, 420, 500, 550, 600}; // thresholds (EWMA or stdDEWMA) for {vlow, low, med, high, vhigh}                                 CALIBRATE[ ]
+const double FlowEWMA[5] = {25, 50, 75, 100, 125}; // thresholds (EWMA or stdDEWMA) for {vlow, low, med, high, vhigh}                                 CALIBRATE[ ]
 double EWMA = 0; //initialize to 'off' value                                                                                                             CAILBRATE[ ]
 const double MaxFlow = 0.15; //should be in L/ms, set to MAX FLOW from sink                                                                                      CAILBRATE[ ]
 double stdDEWMA = 11; //off value                                                                                                                          CAILBRATE[ ]
 const bool useEWMA = false; //true for ptpEWMA , false if standard deviation (usually use standard deviation)                                                     CAILBRATE[ ]
 
-const double thresh[2] = {100, 600}; //set to split code into one, two or three polynomials. 0-thresh[0], thresh[0]-thresh[1], thresh[1]-inf                     CAILBRATE[ ]
+const double thresh[2] = {30, 120}; //set to split code into one, two or three polynomials. 0-thresh[0], thresh[0]-thresh[1], thresh[1]-inf                     CAILBRATE[ ]
 //set thresh[0] very high if you want to only use a single polynomial to fit the data
 //the polynomial values are retrieved from you Excel file, the y axis is flow in L/s, the x axis is either EWMA (useEWMA = true)
 //or stdD (standard deviation) (useEWMA = false)
@@ -242,7 +244,6 @@ void setup() {
   if (useSerial) Serial.begin(9600);
   pinMode(lcdPin, OUTPUT);
   digitalWrite(lcdPin, HIGH);
-  pinMode(ledPin, OUTPUT); // set as an output
   
   pinMode(pirPin, INPUT);
   digitalWrite(pirPin, LOW); // Turn it on
@@ -254,17 +255,27 @@ void setup() {
   if (useSerial) Serial.println(" done");
   if (useSerial) Serial.println("SENSOR ACTIVE");
   delay(50);
-
-
+  
   /*
    * NEOPIXEL SETUP
    */
-#if defined (__AVR_ATtiny85__)
-  if (F_CPU == 16000000) clock_prescale_set(clock_div_1);
-#endif
-
-  pixels.begin(); // This initializes the NeoPixel library.
-
+  pixels.init();
+  pixels.setBrightness(10);
+  //ws2812fx.setColor(00, 128, 255);
+  //ws2812fx.setCustomMode(myComet);
+  int curIdx = 0;
+  uint32_t color = 0;
+  int s = 400;
+  bool startSeg = true;
+  for (int segIdx = 0; segIdx < nSegs; segIdx++) {
+    if (startSeg) {
+      color = pixels.color_wheel(random(70) + 130);
+    }
+    pixels.setSegment(segIdx, curIdx, curIdx + segLengths[segIdx] - 1, FX_MODE_COMET,  color, s + random(80) - 40, false);
+    curIdx += segLengths[segIdx];
+    startSeg = !startSeg;
+  }
+  pixels.start();
   /*
    * END NEOPIXEL SETUP
    */
@@ -280,101 +291,7 @@ void setup() {
   arraysFile = F("Arrays.txt");
   newArraysFile = F("Data.txt");
 
-
-  // All byte functions delcared below are for the custom characters
-  // for printing the big text in the active phase
-  //create all custom characters for BIG TEXT
-  
-  byte drop[8] = {
-    0b00000,
-    0b00100,
-    0b01110,
-    0b11111,
-    0b11111,
-    0b01110,
-    0b00000,
-    0b00000
-  };
-
-  byte Full[8] = {
-    0b11111,
-    0b11111,
-    0b11111,
-    0b11111,
-    0b11111,
-    0b11111,
-    0b11111,
-    0b11111
-  };
-  byte MCenter[8] = {
-    0b11111,
-    0b11111,
-    0b11111,
-    0b11111,
-    0b11111,
-    0b01110,
-    0b00100,
-    0b00000
-  };
-  byte MTop[8] = {
-    0b00000,
-    0b10001,
-    0b11011,
-    0b11111,
-    0b11111,
-    0b11111,
-    0b11111,
-    0b11111
-  };
-  byte WBottom[8] = {
-    0b11111,
-    0b11111,
-    0b11111,
-    0b11111,
-    0b11111,
-    0b11011,
-    0b10001,
-    0b00000
-  };
-  byte Wcenter[8] = {
-    0b00000,
-    0b00100,
-    0b01110,
-    0b11111,
-    0b11111,
-    0b11111,
-    0b11111,
-    0b11111
-  };
-  byte GRight[8] = {
-    0b00000,
-    0b00000,
-    0b00000,
-    0b00000,
-    0b11111,
-    0b11111,
-    0b11111,
-    0b11111
-  };
-  byte ECenter[8] = {
-    0b00000,
-    0b11111,
-    0b11111,
-    0b11111,
-    0b11111,
-    0b11111,
-    0b11111,
-    0b00000
-  };
-  
-  lcd.createChar((byte)0, Full);
-  lcd.createChar(1, MCenter);
-  lcd.createChar(2, MTop);
-  lcd.createChar(3, WBottom);
-  lcd.createChar(4, Wcenter);
-  lcd.createChar(5, GRight);
-  lcd.createChar(6, ECenter);
-  lcd.createChar(7, drop);
+  setupCustomChars();
   
   //initialize SD
   // value of 53 is specific to ARDUINO MEGA, will be different for other Arduino boards
@@ -383,9 +300,6 @@ void setup() {
     if (useSerial) Serial.println(("SD Failed"));
     lcd.clear();
     lcd.print(F("SD Failed. Try again."));
-    /**************
-     * TODO: DISPLAY EINK SD FAILED MESSAGE
-     */
     delay(30000);
     return;
   }
@@ -424,41 +338,15 @@ void setup() {
     delay(3000);
   }
 	lcd.write(F("Ready!"));
- 
-  /************************
-  * TODO: DISPLAY EINK MESSAGES
-  */
   
   delay(500);
 }
 
-int pixelIdx = 0;
-long pixelTime = millis();
 void loop() {
   Serial.println(String(digitalRead(pirPin)) + ", " + String(EWMA));
   if(digitalRead(pirPin) == HIGH && EWMA > 5) {
-    if (millis() - pixelTime > 50) {
-      digitalWrite(lcdPin, HIGH);
-      pixels.setPixelColor(pixelIdx, pixels.Color(0,100,0)); // Moderately bright green color.
-      pixels.show(); // This sends the updated pixel color to the hardware.
-      pixelIdx++;
-      pixelTime = millis();
-      if (pixelIdx >= nPixels) {
-        for (int i = 0; i <= pixelIdx; i++)
-        {
-          pixels.setPixelColor(i, pixels.Color(0,0,0));
-          pixels.show();
-        }
-        pixelIdx = 0;
-      }
-    }
+    pixels.service();
   } else {
-    for (int i = 0; i <= pixelIdx; i++)
-    {
-      pixels.setPixelColor(i, pixels.Color(0,0,0));
-      pixels.show();
-    }
-    pixelIdx = 0;
     //return;
   }
   //setBrightness();
@@ -475,7 +363,6 @@ void loop() {
   stdD = standard_deviation(dev, stdDevReads); //calc stdev
   readIndex = (readIndex + 1) % numReadings;
   stdIndex = (stdIndex + 1) % stdDevReads;
-
   
   if (millis() - checkTime > 180000) { //just to make sure the day and hour are checked every 3 mins
     checkTime = millis();
@@ -501,7 +388,7 @@ void loop() {
       mnm = average;
     }
     count++; //add to count for PTP window
-    return;
+    //return;
   }
   
   // EWMA CALCULATED ------------------------------------------------------- EWMA CALCULATED -------------------------------------------------------
@@ -511,12 +398,12 @@ void loop() {
   stdDEWMA = lam * stdD + (1 - lam) * stdDEWMA;
 
   if (useSerial)
-  {
+  {/*
     Serial.print(millis()); //Serial output for Processing/DAQ ----- // out for real one
     Serial.print("\t");
     Serial.print(EWMA);
     Serial.print("\t");
-    Serial.println(stdD);
+    Serial.println(stdD);*/
   }
   //Check if flow was just TURNED ON (from off)
   if (flowNow != Off && !On && lastFlow == Off) {
@@ -560,7 +447,6 @@ void loop() {
       activeCounter = 0; //reset active timer, to make sure the screen does not refresh too fast.
     }
   }
-
   //IDLE STATE ********************* IDLE STATE ********************* IDLE STATE ********************* IDLE STATE ********************* IDLE STATE *********************
   else {
     idleCounter++;              //next active, random is (min, max-1)
@@ -646,55 +532,6 @@ void loop() {
 //} //end of the output step (count)
 } // ------------------------------------------------------------------------- END OF VOID LOOP -------------------------------------------------------------------
 
-void saveUsageSummary() {
-	//save all of it in one nice 5 column file
-	File UseSum = SD.open(F("UseSums.txt"), FILE_WRITE);
-	if (UseSum) {
-		thisEWMAAvg = thisEWMA / thisCounter;
-		thisStdAvg = thisStd / thisCounter;
-   thisAvgFlow= calculateCurrentFlow(useEWMA ? thisEWMAAvg : thisStdAvg);
-   thisAvgFlow = min(thisAvgFlow, MaxFlow);
-   thisAvgFlow = max(thisAvgFlow, 0);
-
-		thisWater = thisElapsed * thisAvgFlow; //CHOOSE WHICH METHOD TO CALCULATE WATER
-		//Check what day / hour it is
-		UseSum.print(Today); //DAY:HR:TIME:EWMA:STDD:H2O
-		UseSum.print("\t");
-		UseSum.print(thisHour);
-		UseSum.print("\t");
-		UseSum.print(thisElapsed);
-		UseSum.print("\t");
-		UseSum.print(thisEWMAAvg);
-		UseSum.print("\t");
-		UseSum.print(thisStdAvg);
-		UseSum.print("\t");
-		UseSum.println(thisWater);
-		UseSum.close();
-		//Add values to the daily totals
-		todayOnTime += thisElapsed;
-		todayTimeEWMA += thisEWMAAvg * thisElapsed;
-		todayStdDevTime += thisStdAvg * thisElapsed;
-		todayWater += thisWater; //OR this Water, or some combo!!! <------------- DAILY H2O calc.
-		todayUses++;
-		if (!SaveToArrays()) { //save to arrays or show error
-			lcd.clear();
-			lcd.write(F("Arrays not saved,"));
-			lcd.setCursor(0, 1);
-			lcd.write(F("please contact"));
-			lcd.setCursor(0, 2);
-			lcd.write(F("gtwaterstudy@gatech.edu"));
-			lcd.setCursor(0, 3);
-			lcd.write(F("Or 6263908943"));
-			delay(30000);
-		}
-	}
-	else { //save use sum or show error
-		lcd.clear();
-		lcd.print(F("ERROR UseSum not opened"));
-		delay(30000);
-	}
-}
-
 void displayActiveAction() {
   lcd.clear();
   switch (whichAction) {
@@ -769,7 +606,7 @@ void setPhase() {
   // which action and post action screens to be used.
   byte q = Today >= PhaseDay[2]; //a bunch of weird but fast math that calculates the current phase
   q += Today >= PhaseDay[1 + 2*q];
-  //PhaseType PhaseNow = (PhaseType)(2*q + (Today >= PhaseDay[2*q]));
+  PhaseNow = (PhaseType)(2*q + (Today >= PhaseDay[2*q]));
   switch (PhaseNow) {
     case BaselinePhase:
       whichTip = 0;
@@ -843,14 +680,6 @@ double calculateCurrentFlow(double rawData) {
 	return retVal;
 }
 
-//This function prints OFF LOW MED or HIGH to the lcd screen in 3x3 letters
-//OFF if arg is 0 LOW if arg is 1 or 2, med if arg is 3 HIGH if arg is 4 or 5
-void displayBigtext(FlowType flowtype) {
-  //create an array of function pointers
-  void (*fcnPtrArray[])(void) = {&printOff, &printLow, &printLow, &printMed, &printHigh, &printHigh};
-  fcnPtrArray[(byte)flowtype](); //index the array based on flownumber, and call the function
-}
-
 //Classifies flow into off, vlow, low, med, high, vhigh dependign on the thresholds set
 //in the FlowEWMA array
 FlowType classifyFlow(double EWMA){
@@ -872,441 +701,6 @@ float standard_deviation(float data[], byte n) //Calculates the standard deviati
   }
   return sqrt(sum_deviation / n);
 }
-
-byte whatDay() { //reads a file called Day and outputs the 1-2 digit int ---------------------- WHAT DAY ------------
-  File Day;
-  String inString = "";
-  //int i = 0;
-  byte LastDay = 0;
-  //read what day it remembers it being from Days.txt
-  Day = SD.open(daysFile);
-  if (Day) {
-    while (Day.available()) {
-      char inDay = Day.read();
-      inString += inDay;
-    }
-  } else {
-    lcd.clear();
-    lcd.print(F("Error open Days"));
-    delay(30000);
-  }
-  Day.close();
-
-  LastDay = (byte)inString.toFloat();
-  //inString = "";
-  return LastDay;
-}
-
-//Most imporatnat timing funcitons, will check if an hour has passed, a day has passed, and will
-// read and write from and to the Days and Hour .txt files, this keeps track of where the program is even
-// if the arduino gets turned off, so it wont lose its place in the phases or arrays
-byte whatHour() {
-  File Hour;
-  File Day;
-  String inHour = "";
-  String inString = "";
-  byte LastHour = 0;
-  byte LastDayRead = 0;
-  //read what day it remembers it being from Days.txt
-  Hour = SD.open(hourFile);
-  //Read hour file
-  if (Hour) {
-    while (Hour.available()) {
-      char hourread = Hour.read();
-      inHour += hourread;
-    }
-  } else {
-    lcd.clear();
-    lcd.print(F("ERROR Hour File"));
-    delay(30000);
-  }
-  Hour.close();
-  LastHour = (byte)inHour.toFloat(); //Set Last Hour to read from file
-  inHour = "";
-  //Has time elapsed to change the file?
-  //Is there an hour difference between current millis() and last
-  //HourCheck?
-  if ((millis() - HourCheck) > 3600000) { //change back to 24 and delete modifier
-    HourCheck = millis();
-    LastHour++;
-    if (LastHour == 24) { //keep it on 24hr clock, if day changed, change day
-      LastHour = 0;
-      Day = SD.open(daysFile); //open and read day
-      if (Day) {
-        while (Day.available()) {
-          char inDay = Day.read();
-          inString += inDay;
-        }
-        LastDayRead = (byte)inString.toFloat();
-        inString = "";
-        LastDayRead++; //change day
-      } else {
-        lcd.clear();
-        lcd.print(F("ERROR Read Day"));
-        delay(30000);
-      }
-
-
-      SD.remove(daysFile);
-      Day = SD.open(daysFile, FILE_WRITE);
-      if (Day) {
-        Day.print(LastDayRead);
-      } else {
-        lcd.clear();
-        lcd.print(F("ERROR Day File"));
-        delay(3000);
-      }
-      Day.close();
-    }
-    SD.remove(hourFile); //change hour file if hour passed
-    Hour = SD.open(hourFile, FILE_WRITE);
-    if (Hour) {
-      Hour.print(LastHour);
-    }
-    else {
-      lcd.print(F("Error changing Hour"));
-      delay(30000);
-    }
-    Hour.close();
-  }
-  return LastHour;
-}
-
-void displayText77( char OpenFile[8]) { //tip names should be in format "###.txt", and have an empty final character
-  int idx = 0;
-  byte y = 0;
-  byte x = 0;
-  char tRead;
-  char tLast;
-  char tPrinted;
-  File tipFile;
-
-  tipFile = SD.open(OpenFile);
-  lcd.clear();
-  if (tipFile) {
-    while (tipFile.available()) {
-      tPrinted = tLast;
-      tLast = tRead;
-      tRead = tipFile.read();
-      if (idx >= 1) {
-        if (x == 19) {
-          if (tPrinted == ' ') {
-            lcd.print(' ');
-            x++;
-          } else if (tRead != ' ' && tLast != ' ' && tPrinted != ' ') {
-            lcd.print("-");
-            x++;
-          }
-        }
-        if (x == 20) {
-          y++;
-          x = 0;
-        }
-        lcd.setCursor(x, y);
-        if (x == 0 && tLast == ' ') {
-          ;//do nothing and skip this char
-        }
-        else {
-          lcd.print(tLast);
-          x++;
-        }
-      }
-      idx++;
-    }
-    tipFile.close();
-  } else {
-    lcd.clear();
-    lcd.print(F("File not found"));
-    tipFile.close();
-  }
-}
-
-/*
-Saves the values stored in:
-unsigned long todayOnTime;
-unsigned long todayTimeEWMA;
-unsigned long todayStdDevTime;
-double todayWater;
-int todayUses;
-to the file in newArraysFile in a format where the first nDays*4 bytes are for
-the first variable (todayOnTime) for each day. The next nDays*4 bytes are for
-the next variable (todayTimeEWMA), and so on.
-*/
-bool SaveToArrays() {
-	ToByte value;
-	File Array = SD.open(newArraysFile, FILE_WRITE);
-	if (!Array) {
-		return false;
-	}
-	value.l = todayOnTime;
-	Array.seek(4 * (Today - 1));
-	Array.write(value.c, 4);
-	value.l = todayTimeEWMA;
-	Array.seek(4 * (nDays + Today - 1));
-	Array.write(value.c, 4);
-	value.l = todayStdDevTime;
-	Array.seek(4 * (nDays * 2 + Today - 1));
-	Array.write(value.c, 4);
-	value.d = todayWater;
-	Array.seek(4 * (nDays * 3 + Today - 1));
-	Array.write(value.c, 4);
-	value.i = todayUses;
-	Array.seek(4 * (nDays * 4 + Today - 1));
-	Array.write(value.c, 4);
-  Array.close();
-	return true;
-}
-
-/*
-Reads the file in newarraysFile and saves the variables for the
-current day into:
-unsigned long todayOnTime;
-unsigned long todayTimeEWMA;
-unsigned long todayStdDevTime;
-double todayWater;
-int todayUses;
-*/
-bool ReadFromArrays() {
-	ToByte value;
-	File Array = SD.open(newArraysFile, FILE_WRITE);
-	if (!Array) {
-		return false;
-	}
-	Array.seek(4 * (Today - 1));
-	Array.read(value.c, 4);
-	todayOnTime = value.l;
-	Array.seek(4 * (nDays + Today - 1));
-	Array.read(value.c, 4);
-	todayTimeEWMA = value.l;
-	Array.seek(4 * (nDays * 2 + Today - 1));
-	Array.read(value.c, 4);
-	todayStdDevTime = value.l;
-	Array.seek(4 * (nDays * 3 + Today - 1));
-	Array.read(value.c, 4);
-	todayWater = value.d;
-	Array.seek(4 * (nDays * 4 + Today - 1));
-	Array.read(value.c, 4);
-	todayUses = value.i;
-  Array.close();
-	return true;
-}
-
-/*enum MetricType : byte {
-  OnTime, // = 0
-  EWMATime, // = 1
-  StdDevTime, // = 2
-  TotalWater, // = 3
-  Uses // = 4
-};*/
-
-long GetPastOnTime(byte day) {
-  return ReadValueFromArray(day, OnTime).l;
-}
-
-long GetPastEWMATime(byte day) {
-  return ReadValueFromArray(day, EWMATime).l;
-}
-
-long GetPastStdDevTime(byte day) {
-  return ReadValueFromArray(day, StdDevTime).l;
-}
-
-double GetPastTotalWater(byte day) {
-  return ReadValueFromArray(day, TotalWater).d;
-}
-
-int GetPastUses(byte day) {
-  return ReadValueFromArray(day, Uses).i;
-}
-
-ToByte ReadValueFromArray(byte day, MetricType metric) {
-  ToByte value;
-  File Array = SD.open(newArraysFile, FILE_WRITE);
-  if (!Array) {
-    return value;
-  }
-  Array.seek(4 * (nDays * (byte)metric + Today - 1));
-  Array.read(value.c, 4);
-  Array.close();
-  return value;
-}
-
-
-void printOff() {
-  //write O
-  lcd.setCursor(0, 1);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.setCursor(0, 2);
-  lcd.write((byte)0);
-  lcd.write(" ");
-  lcd.write((byte)0);
-  lcd.setCursor(0, 3);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  //Write F
-  lcd.setCursor(4, 1);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.setCursor(4, 2);
-  lcd.write((byte)0);
-  lcd.write((byte)6);
-  lcd.write(" ");
-  lcd.setCursor(4, 3);
-  lcd.write((byte)0);
-  lcd.write(" ");
-  lcd.write(" ");
-  //Write F
-  lcd.setCursor(8, 1);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.setCursor(8, 2);
-  lcd.write((byte)0);
-  lcd.write((byte)6);
-  lcd.write(" ");
-  lcd.setCursor(8, 3);
-  lcd.write((byte)0);
-  lcd.write(" ");
-  lcd.write(" ");
-}
-
-void printMed() {
-  //write M
-  lcd.setCursor(0, 1);
-  lcd.write((byte)0);
-  lcd.write((byte)2);
-  lcd.write((byte)0);
-  lcd.setCursor(0, 2);
-  lcd.write((byte)0);
-  lcd.write((byte)1);
-  lcd.write((byte)0);
-  lcd.setCursor(0, 3);
-  lcd.write((byte)0);
-  lcd.write(" ");
-  lcd.write((byte)0);
-  //Write E
-  lcd.setCursor(4, 1);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.setCursor(4, 2);
-  lcd.write((byte)0);
-  lcd.write((byte)6);
-  lcd.write(" ");
-  lcd.setCursor(4, 3);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  //Write D
-  lcd.setCursor(8, 1);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.write(" ");
-  lcd.setCursor(8, 2);
-  lcd.write((byte)0);
-  lcd.write(" ");
-  lcd.write((byte)0);
-  lcd.setCursor(8, 3);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.write(" ");
-}
-
-void printHigh() {
-  //write H
-  lcd.setCursor(0, 1);
-  lcd.write((byte)0);
-  lcd.write(" ");
-  lcd.write((byte)0);
-  lcd.setCursor(0, 2);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.setCursor(0, 3);
-  lcd.write((byte)0);
-  lcd.write(" ");
-  lcd.write((byte)0);
-
-  //write I, no serif
-  lcd.setCursor(4, 1);
-  lcd.write((byte)0);
-  lcd.setCursor(4, 2);
-  lcd.write((byte)0);
-  lcd.setCursor(4, 3);
-  lcd.write((byte)0);
-
-  //write G
-  lcd.setCursor(6, 1);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.setCursor(6, 2);
-  lcd.write((byte)0);
-  lcd.write(" ");
-  lcd.write((byte)5);
-  lcd.setCursor(6, 3);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-
-  //write H
-  lcd.setCursor(10, 1);
-  lcd.write((byte)0);
-  lcd.write(" ");
-  lcd.write((byte)0);
-  lcd.setCursor(10, 2);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.setCursor(10, 3);
-  lcd.write((byte)0);
-  lcd.write(" ");
-  lcd.write((byte)0);
-}
-
-void printLow() {
-  //write L
-  lcd.setCursor(0, 1);
-  lcd.write((byte)0);
-  lcd.write("  ");
-  lcd.setCursor(0, 2);
-  lcd.write((byte)0);
-  lcd.write("  ");
-  lcd.setCursor(0, 3);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  //Write O
-  lcd.setCursor(4, 1);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.setCursor(4, 2);
-  lcd.write((byte)0);
-  lcd.write(" ");
-  lcd.write((byte)0);
-  lcd.setCursor(4, 3);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  lcd.write((byte)0);
-  //Write W
-  lcd.setCursor(8, 1);
-  lcd.write((byte)0);
-  lcd.write(" ");
-  lcd.write((byte)0);
-  lcd.setCursor(8, 2);
-  lcd.write((byte)0);
-  lcd.write((byte)4);
-  lcd.write((byte)0);
-  lcd.setCursor(8, 3);
-  lcd.write((byte)0);
-  lcd.write((byte)3);
-  lcd.write((byte)0);
-};
 
 void setBrightness() {
   if (whichAction == Hello) {
