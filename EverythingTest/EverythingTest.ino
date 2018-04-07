@@ -4,13 +4,13 @@
 #include <LiquidCrystal.h>
 
 #define LED_COUNT 76
-#define LED_PIN 36
+#define LED_PIN 43
 WS2812FX ws2812fx = WS2812FX(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 int s = 700; //speed, realized as delay time in ms
 const int nSegs = 10;
 int segLengths[nSegs] = {7, 7, 9, 8, 7, 7, 8, 9, 7, 7};
 
-const int lcdPin = 39;
+const int lcdPin = 29;
 const int rs = 32, en = 30, d4 = 37, d5 = 35, d6 = 33, d7 = 31;
 LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 
@@ -57,11 +57,11 @@ void loop() {
   lcd.print("PIR: " + String(digitalRead(pirPin)));
   lcd.setCursor(0, 3);
   lcd.print("Piezo: " + String(analogRead(piezoPin)));
+  Serial.println(analogRead(piezoPin));
 }
 
 
 void setupNeoPixels() {
-  Serial.begin(9600);
   ws2812fx.init();
   ws2812fx.setBrightness(10);
   ws2812fx.setColor(00, 128, 255); 

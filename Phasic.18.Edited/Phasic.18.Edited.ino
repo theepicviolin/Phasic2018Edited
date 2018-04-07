@@ -41,19 +41,21 @@ There should also be included the lasercut schematic for the packaging, which is
  *  LED SETUP
  */
  #include <WS2812FX.h>
-const int nPixels = 144; // Number of LEDs in strip
-const int ledPin = 3;
+const int nPixels = 76; // Number of LEDs in strip
+const int ledPin = 43;
 WS2812FX pixels = WS2812FX(nPixels, ledPin, NEO_GRB + NEO_KHZ800);
 //Adafruit_NeoPixel pixels = Adafruit_NeoPixel(nPixels, ledPin, NEO_GRB + NEO_KHZ800);
 
 const int nSegs = 10;
-int segLengths[nSegs] = {7, 7, 7, 7, 8, 9, 9, 8, 9, 8};
+int segLengths[nSegs] = {7, 7, 8, 9, 7, 7, 9, 8, 7, 7};
 
+const uint32_t color = 0x0080FF;
+const int maxPixelSpeed = 400;
 
-int howbright = 0; //determines the brightness of the LED set from 0 to 255
-const int fadeFactor = 51; //constant to multiply number associated with flow type by. 
-int endbright = 0; //The end level of brightness its transitioning too when going to a new state, eventually howbright is set equal to this
-
+const int fadeDelay = 100;
+const int fadeFactor = 4; //constant to multiply number associated with flow type by. 
+int endBright = 0; //The end level of brightness its transitioning too when going to a new state, eventually howbright is set equal to this
+long lastPixelUpdate = 0;
 
 /*************
  * PIR SETUP
@@ -66,15 +68,15 @@ long unsigned int pirLowIn;
 long unsigned int pirPause = 5000;
 boolean pirLockLow = true;
 boolean pirTakeLowTime;
-int pirPin = 31; //the digital pin connected to the PIR sensor's output
+int pirPin = 34; //the digital pin connected to the PIR sensor's output
 
 /************
  * EVERYTHING ELSE SETUP
  */
 
 // initialize the library with the numbers of the interface pins
-LiquidCrystal lcd(7, 8, 9, 10, 11, 12);
-const int lcdPin = 6;
+LiquidCrystal lcd(32, 30, 37, 35, 33, 31);
+const int lcdPin = 29;
 
 const int inputPin = A0;              // pin on board that the amplification circuit is hooked up to
 
@@ -88,7 +90,7 @@ const double lam = 0.5;               //Lambda of EWMA calculations, larger = fa
 
 //All below values need to be set with EACH calibration
 
-const double FlowEWMA[5] = {25, 50, 75, 100, 125}; // thresholds (EWMA or stdDEWMA) for {vlow, low, med, high, vhigh}                                 CALIBRATE[ ]
+const double FlowEWMA[5] = {2, 20, 40, 60, 90}; // thresholds (EWMA or stdDEWMA) for {vlow, low, med, high, vhigh}                                 CALIBRATE[ ]
 double EWMA = 0; //initialize to 'off' value                                                                                                             CAILBRATE[ ]
 const double MaxFlow = 0.15; //should be in L/ms, set to MAX FLOW from sink                                                                                      CAILBRATE[ ]
 double stdDEWMA = 11; //off value                                                                                                                          CAILBRATE[ ]
@@ -256,29 +258,7 @@ void setup() {
   if (useSerial) Serial.println("SENSOR ACTIVE");
   delay(50);
   
-  /*
-   * NEOPIXEL SETUP
-   */
-  pixels.init();
-  pixels.setBrightness(10);
-  //ws2812fx.setColor(00, 128, 255);
-  //ws2812fx.setCustomMode(myComet);
-  int curIdx = 0;
-  uint32_t color = 0;
-  int s = 400;
-  bool startSeg = true;
-  for (int segIdx = 0; segIdx < nSegs; segIdx++) {
-    if (startSeg) {
-      color = pixels.color_wheel(random(70) + 130);
-    }
-    pixels.setSegment(segIdx, curIdx, curIdx + segLengths[segIdx] - 1, FX_MODE_COMET,  color, s + random(80) - 40, false);
-    curIdx += segLengths[segIdx];
-    startSeg = !startSeg;
-  }
-  pixels.start();
-  /*
-   * END NEOPIXEL SETUP
-   */
+   setupNeoPixels();
   
   // set up the LCD's number of columns and rows:
   lcd.begin(20, 4);
@@ -337,24 +317,24 @@ void setup() {
     lcd.write(F("Arrays not intialized."));
     delay(3000);
   }
+  setPhase();
 	lcd.write(F("Ready!"));
   
   delay(500);
 }
 
-void loop() {
-  Serial.println(String(digitalRead(pirPin)) + ", " + String(EWMA));
-  if(digitalRead(pirPin) == HIGH && EWMA > 5) {
-    pixels.service();
-  } else {
-    //return;
-  }
-  //setBrightness();
 
-  
+void loop() {
+  updatePixelParams();
+  pixels.service();
+   digitalWrite(lcdPin, digitalRead(pirPin));
   // TAKE READING AND CALCULATE STANDARD DEVIATION AND RUNNING AVERAGE
+  //int reading = analogRead(inputPin);
+  int value = analogRead(inputPin); //get pot reading 
+  int reading = 512 + (random(value) - (value/2))/3; //use pot reading to simulate piezo data
+  Serial.println(stdDEWMA);
   total -= readings[readIndex]; // subtract the last reading:
-  readings[readIndex] = analogRead(inputPin); // read from the sensor:
+  readings[readIndex] = reading; // read from the sensor:
   total += readings[readIndex]; // add the reading to the total:
 
   average = total / numReadings; // calculate the average
@@ -388,7 +368,7 @@ void loop() {
       mnm = average;
     }
     count++; //add to count for PTP window
-    //return;
+    return;
   }
   
   // EWMA CALCULATED ------------------------------------------------------- EWMA CALCULATED -------------------------------------------------------
@@ -440,7 +420,8 @@ void loop() {
     thisCounter ++;
     activeCounter++;
     if (activeCounter > activeSwitch) {
-      CurrentFlow = calculateCurrentFlow(useEWMA ? thisEWMAAvg : thisStdAvg);
+      CurrentFlow = calculateCurrentFlow(useEWMA ? EWMA : stdD);
+      //Serial.println(CurrentFlow);
       CurrentFlow = min(MaxFlow * 1000,  CurrentFlow);
       CurrentFlow = max(CurrentFlow, 0);
       displayActiveAction();
@@ -448,7 +429,7 @@ void loop() {
     }
   }
   //IDLE STATE ********************* IDLE STATE ********************* IDLE STATE ********************* IDLE STATE ********************* IDLE STATE *********************
-  else {
+  else if (digitalRead(pirPin)) {
     idleCounter++;              //next active, random is (min, max-1)
     //JUST OFF ACTION STATE +++ +++ +++ +++ +++ JUST OFF ACTION STATE +++ +++ +++ +++ +++  JUST OFF ACTION STATE +++ +++ +++ +++ +++  JUST OFF ACTION STATE +++ +++ +++ +++ +++
     if (justOff) {
@@ -512,6 +493,8 @@ void loop() {
         setPhase();
       } //idle tip end
     }//closed here
+  } else { //no flow and no person
+    digitalWrite(lcdPin, LOW);
   }
   // classify flow into 6 categories
   flow = classifyFlow(useEWMA ? EWMA : stdDEWMA);
@@ -604,9 +587,11 @@ void setPhase() {
   //SET PHASE ____________________________ SET PHASE __________________________ SET PHASE ___________________ SET PHASE ___________________
   //in the set phase area I need to have each phase specify what range of tips to be used
   // which action and post action screens to be used.
+  Today = 50;
   byte q = Today >= PhaseDay[2]; //a bunch of weird but fast math that calculates the current phase
   q += Today >= PhaseDay[1 + 2*q];
   PhaseNow = (PhaseType)(2*q + (Today >= PhaseDay[2*q]));
+  PhaseNow = 2;
   switch (PhaseNow) {
     case BaselinePhase:
       whichTip = 0;
@@ -669,6 +654,7 @@ void setPhase() {
 }
 
 double calculateCurrentFlow(double rawData) {
+  return (rawData/100.0) * (MaxFlow * 1000.0);
 	double retVal;
 	if (rawData <= thresh[0]) {
 		retVal = ((ceA  * rawData + ceB ) * rawData + ceC);
@@ -700,14 +686,5 @@ float standard_deviation(float data[], byte n) //Calculates the standard deviati
     sum_deviation += (data[i] - mean) * (data[i] - mean);
   }
   return sqrt(sum_deviation / n);
-}
-
-void setBrightness() {
-  if (whichAction == Hello) {
-    endbright = .5*fadeFactor;
-  } else {
-    //flow can be casted from the enum FlowType to an int
-    endbright = ((int)flow) * fadeFactor;
-  }
 }
 

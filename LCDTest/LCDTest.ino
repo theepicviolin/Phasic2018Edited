@@ -4,12 +4,11 @@
  * IF SOMETHING IS GOING WRONG LOOK HERE PLZZZZZ
  * ALSO TRY RUNNING THE ARDUINO USING THE POWER THING AND NOT THE COMPUTER THING
  */
-const int lcdPin = 39;
+const int lcdPin = 29;
 const int rs = 32, en = 30, d4 = 37, d5 = 35, d6 = 33, d7 = 31;
 LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 
 void setup() {
-  // set up the LCD's number of columns and rows:
   lcd.begin(20, 4);
   pinMode(lcdPin, OUTPUT);
   digitalWrite(lcdPin, HIGH);

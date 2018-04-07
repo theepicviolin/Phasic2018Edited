@@ -1,5 +1,5 @@
 const int pirPin = 34;
-const int lcdPin = 39;
+const int lcdPin = 29;
 void setup() {
   Serial.begin(9600);
   pinMode(pirPin, INPUT);
